@@ -19,9 +19,18 @@ module ActiveRecord
       end
 
       def type_cast(value) #:nodoc:
-        return OracleEnhancedColumn::string_to_raw(value) if type == :raw
+        return OracleEnhancedColumn.string_to_raw(value) if type == :raw
         return guess_date_or_time(value) if type == :datetime && OracleEnhancedAdapter.emulate_dates
+        return self.class.value_to_decimal(value) if type == :float && !value.nil?
         super
+      end
+
+      def type_cast_code(var_name)
+        type == :float ? "#{self.class.name}.value_to_decimal(#{var_name})" : super
+      end
+
+      def klass
+        type == :float ? BigDecimal : super
       end
 
       def virtual?
@@ -81,12 +90,14 @@ module ActiveRecord
         forced_column_type ||
         case field_type
         when /decimal|numeric|number/i
-          if OracleEnhancedAdapter.emulate_booleans && field_type == 'NUMBER(1)'
+          if OracleEnhancedAdapter.emulate_booleans && field_type.upcase == "NUMBER(1)"
             :boolean
           elsif extract_scale(field_type) == 0 ||
                 # if column name is ID or ends with _ID
                 OracleEnhancedAdapter.emulate_integers_by_column_name && OracleEnhancedAdapter.is_integer_column?(name, table_name)
             :integer
+          elsif field_type.upcase == "NUMBER"
+            :float
           else
             :decimal
           end

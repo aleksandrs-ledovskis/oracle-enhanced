@@ -210,6 +210,7 @@ describe "OracleEnhancedAdapter integer type detection based on column names" do
         job_id        NUMBER,
         salary        NUMBER,
         commission_pct  NUMBER(2,2),
+        unwise_name_id NUMBER(2,2),
         manager_id    NUMBER(6),
         is_manager    NUMBER(1),
         department_id NUMBER(4,0),
@@ -222,17 +223,17 @@ describe "OracleEnhancedAdapter integer type detection based on column names" do
         INCREMENT BY 1 START WITH 10040 CACHE 20 NOORDER NOCYCLE
     SQL
   end
-  
+
   after(:all) do
     @conn.execute "DROP TABLE test2_employees"
     @conn.execute "DROP SEQUENCE test2_employees_seq"
   end
 
-  it "should set NUMBER column type as decimal if emulate_integers_by_column_name is false" do
+  it "should set NUMBER column type as float if emulate_integers_by_column_name is false" do
     ActiveRecord::ConnectionAdapters::OracleEnhancedAdapter.emulate_integers_by_column_name = false
     columns = @conn.columns('test2_employees')
     column = columns.detect{|c| c.name == "job_id"}
-    column.type.should == :decimal
+    column.type.should == :float
   end
 
   it "should set NUMBER column type as integer if emulate_integers_by_column_name is true" do
@@ -244,10 +245,31 @@ describe "OracleEnhancedAdapter integer type detection based on column names" do
     column.type.should == :integer
   end
 
-  it "should set NUMBER column type as decimal if column name does not contain 'id' and emulate_integers_by_column_name is true" do
+  it "should set NUMBER column type as float if column name is not 'id' and does not ends with '_id' and emulate_integers_by_column_name is true" do
     ActiveRecord::ConnectionAdapters::OracleEnhancedAdapter.emulate_integers_by_column_name = true
     columns = @conn.columns('test2_employees')
     column = columns.detect{|c| c.name == "salary"}
+    column.type.should == :float
+  end
+
+  it "should set NUMBER(p,0) column type as integer" do
+    ActiveRecord::ConnectionAdapters::OracleEnhancedAdapter.emulate_integers_by_column_name = true
+    columns = @conn.columns('test2_employees')
+    column = columns.detect{|c| c.name == "department_id"}
+    column.type.should == :integer
+  end
+
+  it "should set NUMBER(p,s) column type as integer if column name ends with '_id' and emulate_integers_by_column_name is true" do
+    ActiveRecord::ConnectionAdapters::OracleEnhancedAdapter.emulate_integers_by_column_name = true
+    columns = @conn.columns('test2_employees')
+    column = columns.detect{|c| c.name == "unwise_name_id"}
+    column.type.should == :integer
+  end
+
+  it "should set NUMBER(p,s) column type as decimal if column name ends with '_id' and emulate_integers_by_column_name is false" do
+    ActiveRecord::ConnectionAdapters::OracleEnhancedAdapter.emulate_integers_by_column_name = false
+    columns = @conn.columns('test2_employees')
+    column = columns.detect{|c| c.name == "unwise_name_id"}
     column.type.should == :decimal
   end
 
@@ -258,7 +280,7 @@ describe "OracleEnhancedAdapter integer type detection based on column names" do
     column.type_cast(1.0).class.should == BigDecimal
   end
 
-  it "should return Fixnum value from NUMBER column if column name contains 'id' and emulate_integers_by_column_name is true" do
+  it "should return Fixnum value from NUMBER column if column name ends with '_id' and emulate_integers_by_column_name is true" do
     ActiveRecord::ConnectionAdapters::OracleEnhancedAdapter.emulate_integers_by_column_name = true
     columns = @conn.columns('test2_employees')
     column = columns.detect{|c| c.name == "job_id"}
@@ -270,7 +292,7 @@ describe "OracleEnhancedAdapter integer type detection based on column names" do
       class ::Test2Employee < ActiveRecord::Base
       end
     end
-    
+
     after(:each) do
       Object.send(:remove_const, "Test2Employee")
       @conn.clear_types_for_columns
@@ -614,7 +636,6 @@ describe "OracleEnhancedAdapter timestamp with timezone support" do
 
 end
 
-
 describe "OracleEnhancedAdapter date and timestamp with different NLS date formats" do
   before(:all) do
     ActiveRecord::Base.establish_connection(CONNECTION_PARAMS)
@@ -879,7 +900,7 @@ describe "OracleEnhancedAdapter assign string to :date and :datetime columns" do
     @employee.reload
     @employee.last_login_at.should == @today.to_time
   end
-  
+
 end
 
 describe "OracleEnhancedAdapter handling of CLOB columns" do
@@ -1324,7 +1345,6 @@ describe "OracleEnhancedAdapter handling of RAW columns" do
     @employee.binary_data.should == @binary_data
   end
 end
-
 
 describe "OracleEnhancedAdapter quoting of NCHAR and NVARCHAR2 columns" do
   before(:all) do

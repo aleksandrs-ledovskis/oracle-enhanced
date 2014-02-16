@@ -355,7 +355,7 @@ describe "OracleEnhancedAdapter schema dump" do
             t.virtual :full_name,        :as => "first_name || ', ' || last_name"
             t.virtual :short_name,       :as => "COALESCE(first_name, last_name)", :type => :string, :limit => 300
             t.virtual :abbrev_name,      :as => "SUBSTR(first_name,1,50) || ' ' || SUBSTR(last_name,1,1) || '.'", :type => "VARCHAR(100)"
-            t.virtual :name_ratio, :as=>'(LENGTH(first_name)*10/LENGTH(last_name)*10)'
+            t.virtual :name_ratio, :as=>'(LENGTH(first_name)/LENGTH(last_name))'
             t.column  :full_name_length, :virtual, :as => "length(first_name || ', ' || last_name)", :type => :integer
             t.virtual :field_with_leading_space, :as => "' ' || first_name || ' '", :limit => 300, :type => :string
           end
@@ -389,7 +389,7 @@ describe "OracleEnhancedAdapter schema dump" do
       standard_dump.should =~ /t\.virtual "full_name",(\s*):limit => 512,(\s*):as => "\\"FIRST_NAME\\"\|\|', '\|\|\\"LAST_NAME\\"",(\s*):type => :string/
       standard_dump.should =~ /t\.virtual "short_name",(\s*):limit => 300,(\s*):as =>(.*),(\s*):type => :string/
       standard_dump.should =~ /t\.virtual "full_name_length",(\s*):precision => 38,(\s*):scale => 0,(\s*):as =>(.*),(\s*):type => :integer/
-      standard_dump.should =~ /t\.virtual "name_ratio",(\s*):as =>(.*)\"$/ # no :type
+      standard_dump.should =~ /t\.virtual "name_ratio",(\s*):as =>(.*),(\s*):type => :float$/
       standard_dump.should =~ /t\.virtual "abbrev_name",(\s*):limit => 100,(\s*):as =>(.*),(\s*):type => :string/
       standard_dump.should =~ /t\.virtual "field_with_leading_space",(\s*):limit => 300,(\s*):as => "' '\|\|\\"FIRST_NAME\\"\|\|' '",(\s*):type => :string/
     end
@@ -433,6 +433,83 @@ describe "OracleEnhancedAdapter schema dump" do
       it 'should dump correctly' do
         standard_dump.should_not =~ /add_index "test_names".+FIRST_NAME.+$/
         standard_dump.should     =~ /add_index "test_names".+field_with_leading_space.+$/
+      end
+    end
+  end
+
+  describe "NUMBER columns" do
+    after(:each) do
+      schema_define do
+        drop_table "test_numbers"
+      end
+    end
+
+    context "when using ActiveRecord::Schema.define and ActiveRecord::ConnectionAdapters::TableDefinition#float" do
+      before :each do
+        schema_define do
+          create_table :test_numbers, :force => true do |t|
+            t.float :value
+          end
+        end
+      end
+
+      it "should dump correctly" do
+        standard_dump.should =~ /t\.float "value"$/
+      end
+    end
+
+    context "when using handwritten 'CREATE_TABLE' SQL" do
+      before :each do
+        ActiveRecord::Base.establish_connection(CONNECTION_PARAMS)
+        @conn = ActiveRecord::Base.connection
+        @conn.execute <<-SQL
+          CREATE TABLE test_numbers (
+            id     NUMBER(#{@conn.class::NUMBER_MAX_PRECISION},0) PRIMARY KEY,
+            value  NUMBER
+          )
+        SQL
+        @conn.execute <<-SQL
+          CREATE SEQUENCE test_numbers_seq  MINVALUE 1
+            INCREMENT BY 1 START WITH 1 CACHE 20 NOORDER NOCYCLE
+        SQL
+      end
+
+      after :each do
+        @conn.execute "DROP SEQUENCE test_numbers_seq"
+      end
+
+      it "should dump correctly" do
+        standard_dump.should =~ /t\.float "value"$/
+      end
+
+      describe "ActiveRecord saving" do
+        before :each do
+          class ::TestNumber < ActiveRecord::Base
+            self.table_name = "test_numbers"
+          end
+        end
+
+        it "should allow saving of values larger than NUMBER_MAX_PRECISION" do
+          number = TestNumber.new(value: 10 ** (@conn.class::NUMBER_MAX_PRECISION + 1))
+          number.save!
+        end
+
+        it "should be recreatable from dump and have same properties" do
+          # Simulating db:schema:dump & db:test:load
+          2.times do
+            create_table_dump = standard_dump[/(create_table.+?end)/m]
+
+            schema_define do
+              drop_table "test_numbers"
+            end
+
+            schema_define(&eval("-> * { #{create_table_dump} }"))
+          end
+
+          # Should raise 'ORA-01438' if :value column type isn't FLOAT'ish
+          number = TestNumber.new(value: 10 ** (@conn.class::NUMBER_MAX_PRECISION + 1))
+          number.save!
+        end
       end
     end
   end
