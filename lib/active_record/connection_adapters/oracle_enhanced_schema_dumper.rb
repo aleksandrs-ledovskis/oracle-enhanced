@@ -60,6 +60,10 @@ module ActiveRecord #:nodoc:
         if @connection.respond_to?(:foreign_keys) && (foreign_keys = @connection.foreign_keys(table_name)).any?
           add_foreign_key_statements = foreign_keys.map do |foreign_key|
             statement_parts = [ ('add_foreign_key ' + foreign_key.from_table.inspect) ]
+
+            # change to_table inspect method
+            foreign_key.to_table.extend TableInspect
+
             statement_parts << foreign_key.to_table.inspect
             
             if foreign_key.options[:columns].size == 1
