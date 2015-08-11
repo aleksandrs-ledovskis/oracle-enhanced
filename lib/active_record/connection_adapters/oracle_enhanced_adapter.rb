@@ -468,6 +468,8 @@ module ActiveRecord
             # as migrations pass ColumnDefinition object to this method.
             # Check if instance variable is defined to avoid warnings about accessing undefined instance variable.
             column.instance_variable_defined?('@nchar') && column.instance_variable_get('@nchar') ? 'N' << super : super
+          when :float
+            value.to_d.to_s
           else
             super
           end
